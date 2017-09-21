@@ -91,7 +91,6 @@ toGrammar pgf =
             mkCat (PGF.startCat pgf)
   
         , symbols =
-            index 0 :
             [ mkSymbol f
             | f <- PGF.functions pgf
             , Just _ <- [PGF.functionType pgf f]
@@ -110,12 +109,9 @@ toGrammar pgf =
     (xs, y, _) = PGF.unType ft
    
   mkTree t =
-   case (PGF.unApp t, PGF.unInt t) of
-     (Just (f,xs), _)      -> App (mkSymbol f) [ mkTree x | x <- xs ]
-     (_,           Just i) -> App (index i) []
-     _                     -> error (PGF.showExpr [] t)
-   where
-    Just (f,xs) = PGF.unApp t
+   case PGF.unApp t of
+     Just (f,xs) -> App (mkSymbol f) [ mkTree x | x <- xs ]
+     _           -> error (PGF.showExpr [] t)
   
   mkExpr (App n []) | not (null s) && all isDigit s =
     PGF.mkInt (read s)
