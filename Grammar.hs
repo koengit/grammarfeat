@@ -133,6 +133,14 @@ readGrammar file =
 
 type FEAT = Cat -> Int -> (Integer, Integer -> Tree)
 
+-- compute how many trees there are of a given size and type
+featCard :: Grammar -> Cat -> Int -> Integer
+featCard gr c n = fst (feat gr c n)
+
+-- generate the i-th tree of a given size and type
+featIth :: Grammar -> Cat -> Int -> Integer -> Tree
+featIth gr c n i = snd (feat gr c n) i
+
 mkFEAT :: Grammar -> FEAT
 mkFEAT gr =
   \c s -> let (n,h) = catList [c] s in (n, head . h)
