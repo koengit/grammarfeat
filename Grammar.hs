@@ -40,7 +40,7 @@ data Grammar
   , linearizeAll :: Tree -> [String]
   , startCat     :: Cat
   , symbols      :: [Symbol]
-  , sizes        :: Sizes
+  , feat         :: FEAT
   }
 
 --------------------------------------------------------------------------------
@@ -96,8 +96,8 @@ toGrammar pgf =
             , Just _ <- [PGF.functionType pgf f]
             ]
 
-        , sizes =
-            mkSizes gr
+        , feat =
+            mkFEAT gr
         }
    in gr
  where
@@ -131,10 +131,10 @@ readGrammar file =
 
 -- FEAT-style generator magic
 
-type Sizes = Cat -> Int -> (Integer, Integer -> Tree)
+type FEAT = Cat -> Int -> (Integer, Integer -> Tree)
 
-mkSizes :: Grammar -> Sizes
-mkSizes gr =
+mkFEAT :: Grammar -> FEAT
+mkFEAT gr =
   \c s -> let (n,h) = catList [c] s in (n, head . h)
  where
   catList' [] s =
