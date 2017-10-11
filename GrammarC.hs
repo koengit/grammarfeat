@@ -6,7 +6,10 @@ import Data.Maybe
 import Data.Char
 import qualified Data.Set as S
 
+import Debug.Trace
+
 import qualified PGF2
+import qualified PGF2.Internal as I
 
 --------------------------------------------------------------------------------
 -- grammar types
@@ -14,7 +17,9 @@ import qualified PGF2
 -- name
 
 type Name = PGF2.CId
-type Cat  = PGF2.CId
+type Cat  = PGF2.Cat
+
+type ConcrCat = (PGF2.Cat,I.FId,I.FId,[String])
 
 -- tree
 
@@ -38,6 +43,8 @@ data Grammar
   { parse        :: String -> [Tree]
   , linearize    :: Tree -> String
   , linearizeAll :: Tree -> [String]
+  , concrCats    :: [ConcrCat]
+  , funsByConcrCat :: Cat -> [[Symbol]]
   , startCat     :: Cat
   , symbols      :: [Symbol]
   , feat         :: FEAT
@@ -81,7 +88,6 @@ toGrammar pgf =
               PGF2.ParseFailed i s -> error s
               PGF2.ParseIncomplete -> error "Incomplete parse"
 
-  --linearize :: Concr -> Expr -> String
         , linearize = \t ->
             PGF2.linearize lang (mkExpr t)
 
@@ -90,6 +96,20 @@ toGrammar pgf =
 
         , startCat =
             mkCat (PGF2.startCat pgf)
+
+        , concrCats = I.concrCategories lang
+
+        , funsByConcrCat = \cat ->
+           let concrProds = 
+                [ I.concrProductions lang fid
+                  | (ct,bg,end,xs) <- concrCats gr 
+                  , ct == cat -- the cat given as an argument
+                  , fid <- [bg..end] ] :: [[I.Production]]
+               getCFun cprod = fst $ case cprod of
+                 I.PApply fid pargs -> I.concrFunction lang fid
+                 I.PCoerce fid -> I.concrFunction lang fid
+            in [ [ mkSymbol (getCFun cp) | cp <- cprods ]
+                 | cprods <- concrProds ]
   
         , symbols =
             [ mkSymbol f
@@ -103,7 +123,6 @@ toGrammar pgf =
    in gr
  where
   lang = snd $ head $ Map.assocs $ PGF2.languages pgf  
-
   
   mkSymbol f = Symbol f ([mkCat x | (_,_,x) <- xs],y)
    where
@@ -185,4 +204,3 @@ mkFEAT gr =
     (n',h') = parts nhs
 
 --------------------------------------------------------------------------------
-
