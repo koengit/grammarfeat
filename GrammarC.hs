@@ -43,6 +43,7 @@ data Grammar
   { parse        :: String -> [Tree]
   , linearize    :: Tree -> String
   , linearizeAll :: Tree -> [String]
+  , tabularLin   :: Tree -> [(String,String)]
   , concrCats    :: [ConcrCat]
   , funsByConcrCat :: Cat -> [[Symbol]]
   , startCat     :: Cat
@@ -94,6 +95,9 @@ toGrammar pgf =
         , linearizeAll = \t -> 
             PGF2.linearizeAll lang (mkExpr t)
 
+        , tabularLin = \t ->
+            PGF2.tabularLinearize lang (mkExpr t)
+
         , startCat =
             mkCat (PGF2.startCat pgf)
 
@@ -105,12 +109,13 @@ toGrammar pgf =
                   | (ct,bg,end,xs) <- concrCats gr 
                   , ct == cat -- the cat given as an argument
                   , fid <- [bg..end] ] :: [[I.Production]]
+
                getCFun cprod = fst $ case cprod of
                  I.PApply fid pargs -> I.concrFunction lang fid
                  I.PCoerce fid -> I.concrFunction lang fid
             in [ [ mkSymbol (getCFun cp) | cp <- cprods ]
                  | cprods <- concrProds ]
-  
+
         , symbols =
             [ mkSymbol f
             | f <- PGF2.functions pgf
