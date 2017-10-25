@@ -16,10 +16,18 @@ import qualified PGF2.Internal as I
 
 -- name
 
-type Name = PGF2.CId
-type Cat  = PGF2.Cat
+type Name = String
+type Cat  = PGF2.Cat -- i.e. String
 
-type ConcrCat = (PGF2.Cat,I.FId,I.FId,[String])
+-- concrete category
+
+data ConcrCat = CC (Maybe Cat) I.FId -- i.e. Int
+  deriving ( Ord, Eq )
+
+instance Show ConcrCat where
+  show (CC (Just cat) fid) = cat ++ "_" ++ show fid 
+  show (CC Nothing fid)    = "_" ++ show fid 
+
 
 -- tree
 
@@ -44,8 +52,9 @@ data Grammar
   , linearize    :: Tree -> String
   , linearizeAll :: Tree -> [String]
   , tabularLin   :: Tree -> [(String,String)]
-  , concrCats    :: [ConcrCat]
-  , funsByConcrCat :: Cat -> [[Symbol]]
+  , concrCats    :: [(PGF2.Cat,I.FId,I.FId,[String])]
+  , linFunctions :: [(PGF2.Fun,[ConcrCat],ConcrCat)]
+  , productions  :: I.FId -> [I.Production] --just for debugging
   , startCat     :: Cat
   , symbols      :: [Symbol]
   , feat         :: FEAT
@@ -103,18 +112,20 @@ toGrammar pgf =
 
         , concrCats = I.concrCategories lang
 
-        , funsByConcrCat = \cat ->
-           let concrProds = 
-                [ I.concrProductions lang fid
-                  | (ct,bg,end,xs) <- concrCats gr 
-                  , ct == cat -- the cat given as an argument
-                  , fid <- [bg..end] ] :: [[I.Production]]
+  
+        , linFunctions = 
+           [ ( fst (I.concrFunction lang funId)
+             , [ CC cat fid | I.PArg _ fid <- pargs 
+                            , cat <- getGFCat fid ]
+             , CC resCat resFid) 
+                  | (cat,bg,end,_) <- concrCats gr 
+                  , resFid <- [bg..end] 
+                  , I.PApply funId pargs <- I.concrProductions lang resFid --TODO handle coercions
+                  , resCat <- getGFCat resFid
+                  ]
 
-               getCFun cprod = fst $ case cprod of
-                 I.PApply fid pargs -> I.concrFunction lang fid
-                 I.PCoerce fid -> I.concrFunction lang fid
-            in [ [ mkSymbol (getCFun cp) | cp <- cprods ]
-                 | cprods <- concrProds ]
+
+        , productions = \fid -> I.concrProductions lang fid
 
         , symbols =
             [ mkSymbol f
@@ -127,11 +138,61 @@ toGrammar pgf =
         }
    in gr
  where
+
   lang = snd $ head $ Map.assocs $ PGF2.languages pgf  
   
+  -- a FId may be a coercion for multiple categories, hence []
+  -- a FId may not be found at all (why?), hence Maybe
+  -- In the latter case, just insert the Nothing directly into ConcrCat.
+  getGFCat :: I.FId -> [Maybe Cat]
+  getGFCat fid = 
+    let coercedFids = [ cfid | prod <- I.concrProductions lang fid
+                             , let cfid = case prod of
+                                           I.PCoerce cf -> cf
+                                           I.PApply _ _ -> fid ]
+
+        cats = nub [ cat | (cat,bg,end,xs) <- I.concrCategories lang
+                         , cfid <- coercedFids
+                         , cfid `elem` [bg..end] ] 
+     in case cats of 
+          [] -> [Nothing]
+          xs -> map Just xs
+
+  getCFun :: I.Production -> [(PGF2.Fun,[I.PArg])]
+  getCFun cprod = case cprod of
+    I.PApply funId pargs -> [(fst $ I.concrFunction lang funId,pargs)]
+    I.PCoerce concrCat   -> concatMap getCFun (I.concrProductions lang concrCat)
+
+  -- A single PArg yields a list of top-level constructors for its category + a new list of PArgs
+  -- We return a list of funs, which form a tree.
+  parg2trees :: I.PArg -> [Tree]
+  parg2trees (I.PArg _ concrCat) = cat2trees concrCat
+
+  -- this may not make any sense
+  cat2trees :: I.FId -> [Tree]
+  cat2trees concrCat = 
+    let funs_pargs = concatMap getCFun (I.concrProductions lang concrCat) :: [(PGF2.Fun,[I.PArg])]
+                 -- [ ("AdAdv",xs), ("PrepNP",ys), ("today_Adv",[]), ... ]
+
+     in --filter isFinite
+         [ App (mkSymbol fun) trees
+          | (fun,pargs) <- funs_pargs -- pargs is a list of cats
+
+          , let trees = mapMaybe safeHead $ map (filter isFinite . parg2trees) pargs :: [Tree]
+           ]
+  safeHead [] = Nothing
+  safeHead (x:xs) = Just x
+
+  isFinite :: Tree -> Bool
+  isFinite (App top []) = True
+  isFinite (App top ts) = and [ go 0 t | t <- ts ]
+   where
+    go 100 _          = False --arbitrary limit of depth
+    go n (App top ts) = and [ go (n+1) t | t <- ts ]
+
   mkSymbol f = Symbol f ([mkCat x | (_,_,x) <- xs],y)
    where
-    Just ft    = PGF2.functionType pgf f
+    Just ft    = PGF2.functionType pgf f -- functionType :: PGF -> Fun -> Maybe Type
     (xs, y, _) = PGF2.unType ft
    
   mkTree t =
