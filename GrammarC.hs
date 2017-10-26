@@ -53,8 +53,8 @@ data Grammar
   , linearizeAll :: Tree -> [String]
   , tabularLin   :: Tree -> [(String,String)]
   , concrCats    :: [(PGF2.Cat,I.FId,I.FId,[String])]
-  , linFunctions :: [(PGF2.Fun,[ConcrCat],ConcrCat)]
   , productions  :: I.FId -> [I.Production] --just for debugging
+  , linFunctions :: [(PGF2.Fun,[ConcrCat],ConcrCat)]
   , startCat     :: Cat
   , symbols      :: [Symbol]
   , feat         :: FEAT
@@ -112,7 +112,8 @@ toGrammar pgf =
 
         , concrCats = I.concrCategories lang
 
-  
+        , productions = \fid -> I.concrProductions lang fid
+
         , linFunctions = 
            [ ( fst (I.concrFunction lang funId)
              , [ CC cat fid | I.PArg _ fid <- pargs 
@@ -120,12 +121,11 @@ toGrammar pgf =
              , CC resCat resFid) 
                   | (cat,bg,end,_) <- concrCats gr 
                   , resFid <- [bg..end] 
-                  , I.PApply funId pargs <- I.concrProductions lang resFid --TODO handle coercions
+                  , prod <- I.concrProductions lang resFid 
+                  , (funId,_,pargs) <- getCFun prod 
                   , resCat <- getGFCat resFid
                   ]
 
-
-        , productions = \fid -> I.concrProductions lang fid
 
         , symbols =
             [ mkSymbol f
@@ -158,37 +158,10 @@ toGrammar pgf =
           [] -> [Nothing]
           xs -> map Just xs
 
-  getCFun :: I.Production -> [(PGF2.Fun,[I.PArg])]
+  getCFun :: I.Production -> [(I.FunId,PGF2.Fun,[I.PArg])]
   getCFun cprod = case cprod of
-    I.PApply funId pargs -> [(fst $ I.concrFunction lang funId,pargs)]
+    I.PApply funId pargs -> [(funId,fst $ I.concrFunction lang funId,pargs)]
     I.PCoerce concrCat   -> concatMap getCFun (I.concrProductions lang concrCat)
-
-  -- A single PArg yields a list of top-level constructors for its category + a new list of PArgs
-  -- We return a list of funs, which form a tree.
-  parg2trees :: I.PArg -> [Tree]
-  parg2trees (I.PArg _ concrCat) = cat2trees concrCat
-
-  -- this may not make any sense
-  cat2trees :: I.FId -> [Tree]
-  cat2trees concrCat = 
-    let funs_pargs = concatMap getCFun (I.concrProductions lang concrCat) :: [(PGF2.Fun,[I.PArg])]
-                 -- [ ("AdAdv",xs), ("PrepNP",ys), ("today_Adv",[]), ... ]
-
-     in --filter isFinite
-         [ App (mkSymbol fun) trees
-          | (fun,pargs) <- funs_pargs -- pargs is a list of cats
-
-          , let trees = mapMaybe safeHead $ map (filter isFinite . parg2trees) pargs :: [Tree]
-           ]
-  safeHead [] = Nothing
-  safeHead (x:xs) = Just x
-
-  isFinite :: Tree -> Bool
-  isFinite (App top []) = True
-  isFinite (App top ts) = and [ go 0 t | t <- ts ]
-   where
-    go 100 _          = False --arbitrary limit of depth
-    go n (App top ts) = and [ go (n+1) t | t <- ts ]
 
   mkSymbol f = Symbol f ([mkCat x | (_,_,x) <- xs],y)
    where
