@@ -28,10 +28,6 @@ instance Show ConcrCat where
   show (CC (Just cat) fid) = cat ++ "_" ++ show fid 
   show (CC Nothing fid)    = "_" ++ show fid 
 
-abstrCat :: ConcrCat -> Cat
-abstrCat (CC Nothing _)    = error "Coercion type :((("
-abstrCat (CC (Just cat) _) = cat
-
 -- tree
 
 data Tree
@@ -44,7 +40,7 @@ data Symbol
   = Symbol
   { name :: Name
   , typ  :: ([Cat], Cat)
-  , concrTypes :: [([ConcrCat],ConcrCat)]
+  , ctyp :: [([ConcrCat],ConcrCat)]
   }
  deriving ( Eq, Ord )
 
@@ -54,11 +50,10 @@ data Grammar
   = Grammar
   { parse        :: String -> [Tree]
   , linearize    :: Tree -> String
---  , linearizeAll :: Tree -> [String]
+  , linearizeAll :: Tree -> [String]
   , tabularLin   :: Tree -> [(String,String)]
   , concrCats    :: [(PGF2.Cat,I.FId,I.FId,[String])]
 --  , productions  :: I.FId -> [I.Production] --just for debugging
---  , linFunctions :: [(Name,[ConcrCat],ConcrCat)]
   , coercions    :: [(ConcrCat,ConcrCat)]
   , startCat     :: Cat
   , symbols      :: [Symbol]
@@ -106,8 +101,8 @@ toGrammar pgf =
         , linearize = \t ->
             PGF2.linearize lang (mkExpr t)
 
-        --, linearizeAll = \t -> 
-        --    PGF2.linearizeAll lang (mkExpr t)
+        , linearizeAll = \t -> 
+            PGF2.linearizeAll lang (mkExpr t)
 
         , tabularLin = \t ->
             PGF2.tabularLinearize lang (mkExpr t)
@@ -122,7 +117,7 @@ toGrammar pgf =
            [ Symbol {
               name = fst $ I.concrFunction lang funId ,
 
-              concrTypes = ctypes,
+              ctyp = ctypes,
 
               typ = head [ (map abstrCat argCats,abstrCat resCat)
                       | (argCats,resCat) <- ctypes ]
@@ -138,32 +133,33 @@ toGrammar pgf =
                             | resCat <- getGFCat resFid ]
                   ]
 
-        , coercions = 
-          [ ( CC Nothing afid
-            , CC ccat cfid )
-            | afid <- [0..I.concrTotalCats lang]
-            , I.PCoerce cfid  <- I.concrProductions lang afid 
-            , ccat <- getGFCat cfid
-          ]
-
-        --, symbols =
-        --    [ mkSymbol f
-        --    | f <- PGF2.functions pgf
-        --    , Just _ <- [PGF2.functionType pgf f]
-        --    ]
+        , coercions = coerces
+          --[ ( CC Nothing afid
+          --  , CC ccat cfid )
+          --  | afid <- [0..I.concrTotalCats lang]
+          --  , I.PCoerce cfid  <- I.concrProductions lang afid 
+          --  , ccat <- getGFCat cfid
+          --]
 
         , feat =
             mkFEAT gr
         }
    in gr
  where
-
   lang = snd $ head $ Map.assocs $ PGF2.languages pgf  
 
-  coercesTo :: ConcrCat -> [ConcrCat] -- all the cats you can coerce cat
-  coercesTo (CC Nothing fid) = undefined
-  coercesTo cat@(CC c f) = [cat]
 
+  coerces = [ ( CC Nothing afid
+               , CC ccat cfid )
+              | afid <- [0..I.concrTotalCats lang]
+              , I.PCoerce cfid  <- I.concrProductions lang afid 
+              , ccat <- getGFCat cfid ]
+
+
+  abstrCat :: ConcrCat -> Cat
+  abstrCat c@(CC Nothing _)  = let Just ccat = lookup c coerces 
+                                in abstrCat ccat
+  abstrCat (CC (Just cat) _) = cat
   
   -- a FId may be a coercion for multiple categories, hence []
   -- a FId may not be found at all (why?), hence Maybe
@@ -182,10 +178,10 @@ toGrammar pgf =
           [] -> [Nothing]
           xs -> map Just xs
 
-  getCFun :: I.Production -> [(I.FunId,PGF2.Fun,[I.PArg])]
-  getCFun cprod = case cprod of
-    I.PApply funId pargs -> [(funId,fst $ I.concrFunction lang funId,pargs)]
-    I.PCoerce concrCat   -> concatMap getCFun (I.concrProductions lang concrCat)
+  --getCFun :: I.Production -> [(I.FunId,PGF2.Fun,[I.PArg])]
+  --getCFun cprod = case cprod of
+  --  I.PApply funId pargs -> [(funId,fst $ I.concrFunction lang funId,pargs)]
+  --  I.PCoerce concrCat   -> concatMap getCFun (I.concrProductions lang concrCat)
 
 
   mkSymbol f = Symbol f ([mkCat x | (_,_,x) <- xs],y) []
@@ -241,7 +237,7 @@ mkFEAT gr =
           [ (n, \i -> [App f (h i)])
           | s > 0 
           , f <- symbols gr
-          , (xs,y) <- concrTypes f
+          , (xs,y) <- ctyp f
           , y == c
           , let (n,h) = catList xs (s-1)
           ] ++
@@ -261,7 +257,7 @@ mkFEAT gr =
   catList = memo catList'
    where
     cats = nub $ [ x | f <- symbols gr
-                   , (xs,y) <- concrTypes f
+                   , (xs,y) <- ctyp f
                    , x <- y:xs ] ++
                  [ z | (x,y) <- coercions gr
                      , z <- [x,y] ] --adds all possible categories in the grammar
