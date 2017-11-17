@@ -40,9 +40,15 @@ data Symbol
   = Symbol
   { name :: Name
   , typ  :: ([Cat], Cat)
-  , ctyp :: [([ConcrCat],ConcrCat)]
+  , ctyp :: [([ConcrCat],ConcrCat)] --There's a bug: this is supposed to be all the concrcats, but it's actually only one, and symbols contains a duplicate symbol for each concrcat!
   }
  deriving ( Eq, Ord )
+
+mergeSymb :: Symbol -> Symbol -> Symbol
+mergeSymb s1 s2 = s1 { ctyp = ctyp s1 ++ ctyp s2 }
+
+symbEq s1 s2 = name s1 == name s2
+               
 
 -- grammar
 
@@ -113,15 +119,10 @@ toGrammar pgf =
         , concrCats = I.concrCategories lang
 
         , symbols = 
-
-           [ Symbol {
-              name = fst $ I.concrFunction lang funId ,
-
-              ctyp = ctypes,
-
-              typ = head [ (map abstrCat argCats,abstrCat resCat)
-                      | (argCats,resCat) <- ctypes ]
-              }
+           [ Symbol { name = fst $ I.concrFunction lang funId ,
+                      ctyp = ctypes ,
+                      typ = head [ (map abstrCat argCats,abstrCat resCat)
+                                   | (argCats,resCat) <- ctypes ] }
 
                   | (cat,bg,end,_) <- concrCats gr 
                   , resFid <- [bg..end] 
@@ -134,12 +135,6 @@ toGrammar pgf =
                   ]
 
         , coercions = coerces
-          --[ ( CC Nothing afid
-          --  , CC ccat cfid )
-          --  | afid <- [0..I.concrTotalCats lang]
-          --  , I.PCoerce cfid  <- I.concrProductions lang afid 
-          --  , ccat <- getGFCat cfid
-          --]
 
         , feat =
             mkFEAT gr
@@ -147,7 +142,6 @@ toGrammar pgf =
    in gr
  where
   lang = snd $ head $ Map.assocs $ PGF2.languages pgf  
-
 
   coerces = [ ( CC Nothing afid
                , CC ccat cfid )
@@ -162,8 +156,10 @@ toGrammar pgf =
   abstrCat (CC (Just cat) _) = cat
   
   -- a FId may be a coercion for multiple categories, hence []
-  -- a FId may not be found at all (why?), hence Maybe
-  -- In the latter case, just insert the Nothing directly into ConcrCat.
+  -- The result of this function is inserted into ConcrCat,
+  -- where Just means not a coercion and Nothing means coercion.
+  -- But coercions are taken care of here, so if we get [Nothing],
+  -- it seems like something is wrong? (trace to find out if that happens)
   getGFCat :: I.FId -> [Maybe Cat]
   getGFCat fid = 
     let coercedFids = [ cfid | prod <- I.concrProductions lang fid
@@ -172,10 +168,12 @@ toGrammar pgf =
                                            I.PApply _ _ -> fid ]
 
         cats = nub [ cat | (cat,bg,end,xs) <- I.concrCategories lang
-                         , cfid <- coercedFids
-                         , cfid `elem` [bg..end] ] 
+                         , fid `elem` [bg..end] ]
+                         --, cfid <- coercedFids
+                         --, cfid `elem` [bg..end] ] 
      in case cats of 
-          [] -> [Nothing]
+          [] -> --trace ("getGFCat: no values for fID " ++ show fid) $ 
+                [Nothing]
           xs -> map Just xs
 
   --getCFun :: I.Production -> [(I.FunId,PGF2.Fun,[I.PArg])]
