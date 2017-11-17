@@ -211,19 +211,26 @@ readGrammar file =
 
 -- FEAT-style generator magic
 
-type FEAT = ConcrCat -> Int -> (Integer, Integer -> Tree)
+type FEAT = [ConcrCat] -> Int -> (Integer, Integer -> [Tree])
 
 -- compute how many trees there are of a given size and type
 featCard :: Grammar -> ConcrCat -> Int -> Integer
-featCard gr c n = fst (feat gr c n)
+featCard gr c n = featCardVec gr [c] n
 
 -- generate the i-th tree of a given size and type
 featIth :: Grammar -> ConcrCat -> Int -> Integer -> Tree
-featIth gr c n i = snd (feat gr c n) i
+featIth gr c n i = head (featIthVec gr [c] n i)
+
+-- compute how many tree-vectors there are of a given size and type-vector
+featCardVec :: Grammar -> [ConcrCat] -> Int -> Integer
+featCardVec gr cs n = fst (feat gr cs n)
+
+-- generate the i-th tree-vector of a given size and type-vector
+featIthVec :: Grammar -> [ConcrCat] -> Int -> Integer -> [Tree]
+featIthVec gr cs n i = snd (feat gr cs n) i
 
 mkFEAT :: Grammar -> FEAT
-mkFEAT gr =
-  \c s -> let (n,h) = catList [c] s in (n, head . h)
+mkFEAT gr = catList
  where
   catList' [] s =
     if s == 0
