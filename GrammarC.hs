@@ -18,6 +18,7 @@ import qualified PGF2.Internal as I
 
 type Name = String
 type Cat  = PGF2.Cat -- i.e. String
+type SeqId = Int
 
 -- concrete category
 
@@ -39,6 +40,7 @@ data Tree
 data Symbol
   = Symbol
   { name :: Name
+  , seqs :: [SeqId]
   , typ  :: ([Cat], Cat)
   , ctyp :: ([ConcrCat],ConcrCat)
   }
@@ -61,6 +63,7 @@ data Grammar
   , coercions    :: [(ConcrCat,ConcrCat)]
   , startCat     :: Cat
   , symbols      :: [Symbol]
+  , syncategs    :: SeqId -> [String]
   , feat         :: FEAT
   }
 
@@ -119,7 +122,8 @@ toGrammar pgf =
 
         , symbols = 
            [ Symbol { 
-               name = fst $ I.concrFunction lang funId,
+               name = nm,
+               seqs = sqs,
                ctyp = (cArgTypes, cResType),
                typ = (map abstrCat cArgTypes, abstrCat cResType) } --this takes care of coercions
 
@@ -127,9 +131,15 @@ toGrammar pgf =
              , resFid <- [bg..end] 
              , I.PApply funId pargs <- I.concrProductions lang resFid
              , let cArgTypes = [ CC (getGFCat fid) fid | I.PArg _ fid <- pargs ]
-             , let cResType = CC (getGFCat resFid) resFid ]
+             , let cResType = CC (getGFCat resFid) resFid 
+             , let (nm,sqs) = I.concrFunction lang funId ]
 
         , coercions = coerces
+
+        -- Only take symbol tokens, not other stuff (TODO: do other stuff)
+        , syncategs = \sid -> 
+            [ tok | I.SymKS tok <- I.concrSequence lang sid ]
+--            [ show (sid,sym) | sym <- I.concrSequence lang sid ]
 
         , feat =
             mkFEAT gr
