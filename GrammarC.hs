@@ -80,8 +80,14 @@ uses :: Grammar -> Tree -> [S.Set Int]
 uses gr (App h []) | isHole h =
   [ S.singleton i | i <- [0..n-1] ]
  where
-  (_,c) = typ h
-  n     = head [ length (seqs f) | f <- symbols gr, let (_,c') = typ f, c == c' ]
+  (_,c) = ctyp h
+  n     = head [ length (seqs f) 
+                 | f <- symbols gr
+                 , let (_,c') = ctyp f
+                 , coerce gr c == coerce gr c' ]
+
+  coerce :: Grammar -> ConcrCat -> ConcrCat
+  coerce gr ccat = fromMaybe ccat (lookup ccat (coercions gr))
 
 uses gr (App f xs) =
   [ S.unions
@@ -92,6 +98,7 @@ uses gr (App f xs) =
   ]
  where
   us = map (uses gr) xs
+
 
 --------------------------------------------------------------------------------
 -- name
