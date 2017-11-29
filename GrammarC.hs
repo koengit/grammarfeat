@@ -54,13 +54,14 @@ data Grammar
   -- parse        :: String -> [Tree]
     linearize    :: Tree -> String
   , linearizeAll :: Tree -> [String]
-  , tabularLin   :: Tree -> [String]
+  , tabularLin   :: Tree -> [(String,String)]
   , concrCats    :: [(PGF2.Cat,I.FId,I.FId,[String])]
 --  , productions  :: I.FId -> [I.Production] --just for debugging
   , coercions    :: [(ConcrCat,ConcrCat)]
   , startCat     :: Cat
   , symbols      :: [Symbol]
   , syncategs    :: SeqId -> [String]
+  , concrSeqs    :: SeqId -> [Either String (Int,Int)] 
   , feat         :: FEAT
   }
 
@@ -110,7 +111,7 @@ toGrammar pgf =
             PGF2.linearizeAll lang (mkExpr t)
 
         , tabularLin = \t ->
-            map snd $ PGF2.tabularLinearize lang (mkExpr t)
+            PGF2.tabularLinearize lang (mkExpr t)
 
         , startCat =
             mkCat (PGF2.startCat pgf)
@@ -138,11 +139,18 @@ toGrammar pgf =
             [ tok | I.SymKS tok <- I.concrSequence lang sid ]
 --            [ show (sid,sym) | sym <- I.concrSequence lang sid ]
 
+        , concrSeqs = map cseq2Either . I.concrSequence lang
+
         , feat =
             mkFEAT gr
         }
    in gr
  where
+
+  cseq2Either (I.SymKS tok) = Left tok
+  cseq2Either (I.SymCat x y) = Right (x,y)
+  cseq2Either x = Left (show x)
+
   lang = snd $ head $ Map.assocs $ PGF2.languages pgf  
 
   coerces = [ ( CC Nothing afid
