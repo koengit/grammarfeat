@@ -53,6 +53,7 @@ isHole :: Symbol -> Bool
 isHole (Symbol "()" _ _ _) = True
 isHole _                   = False
 
+
 -- grammar
 
 data Grammar
