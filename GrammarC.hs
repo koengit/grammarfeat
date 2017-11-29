@@ -47,7 +47,11 @@ data Symbol
  deriving ( Eq, Ord )
 
 hole :: ConcrCat -> Symbol
-hole c = Symbol "()" ([], "") ([],c)
+hole c = Symbol "()" [] ([], "") ([],c)
+
+isHole :: Symbol -> Bool
+isHole (Symbol "()" _ _ _) = True
+isHole _                   = False
 
 -- grammar
 
@@ -67,6 +71,26 @@ data Grammar
   , concrSeqs    :: SeqId -> [Either String (Int,Int)] 
   , feat         :: FEAT
   }
+
+--------------------------------------------------------------------------------
+-- analyzing contexts
+
+uses :: Grammar -> Tree -> [S.Set Int]
+uses gr (App h []) | isHole h =
+  [ S.singleton i | i <- [0..n-1] ]
+ where
+  (_,c) = typ h
+  n     = head [ length (seqs f) | f <- symbols gr, let (_,c') = typ f, c == c' ]
+
+uses gr (App f xs) =
+  [ S.unions
+    [ (us !! i) !! j
+    | Right (i,j) <- concrSeqs gr sid
+    ]
+  | sid <- seqs f
+  ]
+ where
+  us = map (uses gr) xs
 
 --------------------------------------------------------------------------------
 -- name
