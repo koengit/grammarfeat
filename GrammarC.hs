@@ -46,6 +46,9 @@ data Symbol
   }
  deriving ( Eq, Ord )
 
+hole :: ConcrCat -> Symbol
+hole c = Symbol "()" ([], "") ([],c)
+
 -- grammar
 
 data Grammar
@@ -205,7 +208,7 @@ readGrammar file =
 
 -- FEAT-style generator magic
 
-type FEAT = [ConcrCat] -> Int -> (Integer, Integer -> [Tree])
+type FEAT = [ConcrCat] -> Maybe ConcrCat -> Int -> (Integer, Integer -> [Tree])
 
 -- compute how many trees there are of a given size and type
 featCard :: Grammar -> ConcrCat -> Int -> Integer
@@ -217,55 +220,89 @@ featIth gr c n i = head (featIthVec gr [c] n i)
 
 -- compute how many tree-vectors there are of a given size and type-vector
 featCardVec :: Grammar -> [ConcrCat] -> Int -> Integer
-featCardVec gr cs n = fst (feat gr cs n)
+featCardVec gr cs n = fst (feat gr cs Nothing n)
 
 -- generate the i-th tree-vector of a given size and type-vector
 featIthVec :: Grammar -> [ConcrCat] -> Int -> Integer -> [Tree]
-featIthVec gr cs n i = snd (feat gr cs n) i
+featIthVec gr cs n i = snd (feat gr cs Nothing n) i
+
+-- compute how many contexts there are of a given size, type, and hole-type
+featCardCtx :: Grammar -> ConcrCat -> ConcrCat -> Int -> Integer
+featCardCtx gr c hc n = fst (feat gr [c] (Just hc) n)
+
+-- generate the i-th context of a given size, type, and hole-type
+featIthCtx :: Grammar -> ConcrCat -> ConcrCat -> Int -> Integer -> Tree
+featIthCtx gr c hc n i = head (snd (feat gr [c] (Just hc) n) i)
 
 mkFEAT :: Grammar -> FEAT
 mkFEAT gr = catList
  where
-  catList' [] s =
-    if s == 0
-      then (1, \0 -> [])
-      else (0, error "empty")
+  catList' :: FEAT
+  catList' [] Nothing 0 = (1, \0 -> [])
+  catList' [] _       _ = (0, error "empty")
 
-  catList' [c] s =
+  catList' [c] mh s =
     parts $ 
           [ (n, \i -> [App f (h i)])
           | s > 0 
           , f <- symbols gr
           , let (xs,y) = ctyp f
           , y == c
-          , let (n,h) = catList xs (s-1)
+          , let (n,h) = catList xs mh (s-1)
           ] ++
-          [ catList [x] s -- put (s-1) if it doesn't terminate
+          [ catList [x] mh s -- put (s-1) if it doesn't terminate
           | s > 0 
           , (x,y) <- coercions gr
           , y == c
-          ] 
-
-  catList' (c:cs) s =
-    parts [ (nx*nxs, \i -> hx (i `mod` nx) ++ hxs (i `div` nx))
-          | k <- [0..s]
-          , let (nx,hx)   = catList [c] k
-                (nxs,hxs) = catList cs (s-k)
+          ] ++
+          [ (1, \0 -> [App (hole c) []])
+          | s == 0
+          , Just c' <- [mh]
+          , c == c'
           ]
 
-  catList = memo catList'
+  catList' (c:cs) mh s =
+    parts [ (nx*nxs, \i -> hx (i `mod` nx) ++ hxs (i `div` nx))
+          | k <- [0..s]
+          , (mh1,mh2) <- choose mh
+          , let (nx,hx)   = catList [c] mh1 k
+                (nxs,hxs) = catList cs mh2 (s-k)
+          ]
+   where
+    choose Nothing = [(Nothing,Nothing)]
+    choose mh      = [(mh,Nothing),(Nothing,mh)]
+
+  catList :: FEAT
+  catList =
+    memoList (\cs ->
+      memoMaybe (\mh ->
+        memoNat (catList' cs mh)))
    where
     cats = nub $ [ x | f <- symbols gr
                      , let (xs,y) = ctyp f
                      , x <- y:xs ] ++
                  [ z | (x,y) <- coercions gr
                      , z <- [x,y] ] --adds all possible categories in the grammar
-    memo f = \cs -> case cs of
-                      []   -> (nil !!)
-                      a:as -> head [ f' as | (c,f') <- cons, a == c ]
+
+    memoList f = \cs -> case cs of
+                    []   -> fNil
+                    a:as -> fCons a as
      where
-      nil  = [ f [] s | s <- [0..] ]
-      cons = [ (c, memo (f . (c:))) | c <- cats ]
+      fNil  = f []
+      fCons = \a -> head [ fc | (c,fc) <- tab, a == c ]
+      tab   = [ (c, memoList (f . (c:))) | c <- cats ]
+
+    memoMaybe f = \mx -> case mx of
+                    Nothing -> fNothing
+                    Just a  -> fJust a
+     where
+      fNothing = f Nothing
+      fJust    = \a -> head [ fc | (c,fc) <- tab, a == c ]
+      tab      = [ (c, f (Just c)) | c <- cats ]
+
+    memoNat f = (tab!!)
+     where
+      tab = [ f i | i <- [0..] ]
 
   parts []          = (0, error "empty parts ")
   parts ((n,h):nhs) = (n+n', \i -> if i < n then h i else h' (i-n))
@@ -273,3 +310,4 @@ mkFEAT gr = catList
     (n',h') = parts nhs
 
 --------------------------------------------------------------------------------
+
