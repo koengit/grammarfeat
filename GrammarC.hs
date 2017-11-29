@@ -280,15 +280,15 @@ mkFEAT gr = catList
           , y == c
           ] ++
           [ (1, \0 -> [App (hole c) []])
-          | s == 0
+          | s == 1 -- holes have size 1
           , Just c' <- [mh]
           , c == c'
           ]
 
   catList' (c:cs) mh s =
     parts [ (nx*nxs, \i -> hx (i `mod` nx) ++ hxs (i `div` nx))
-          | k <- [0..s]
-          , (mh1,mh2) <- choose mh
+          | (mh1,mh2) <- choose mh
+          , k <- [0..s]
           , let (nx,hx)   = catList [c] mh1 k
                 (nxs,hxs) = catList cs mh2 (s-k)
           ]
